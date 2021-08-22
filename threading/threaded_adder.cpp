@@ -95,9 +95,7 @@ int main(int argc,char **argv,char **envp){
         thread_args[current_thread].start = start;
         thread_args[current_thread].end = end;
 
-        pthread_create(&thr[current_thread], NULL, addNumbers, &thread_args[current_thread]); // Instancia thread
-        //printf("Thread: %i, start: %i, end: %i\n", current_thread, start, end);
-        
+        pthread_create(&thr[current_thread], NULL, addNumbers, &thread_args[current_thread]); // Instancia thread        
         start += split_size;
     }
 
