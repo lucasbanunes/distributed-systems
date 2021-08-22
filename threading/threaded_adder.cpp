@@ -106,19 +106,16 @@ int main(int argc,char **argv,char **envp){
         pthread_join(thr[current_thread], NULL);
     }
     clock_t thread_finish = clock();
-    double time_elapsed = ((double)(thread_finish - thread_start)) / CLOCKS_PER_SEC;
-    // printf("A soma total é %i \n", acc);
-    printf("%.10f;%i;%i\n", time_elapsed, n_threads, n_numbers);
+    double thread_time_elapsed = ((double)(thread_finish - thread_start)) / CLOCKS_PER_SEC;
 
-    // Debug
-    /*clock_t no_thread_start = clock();
+    clock_t no_thread_start = clock();
     int no_thread_acc = 0;
     for(int i=0; i<n_numbers; i++){
         no_thread_acc += all_numbers[i];
     }
     clock_t no_thread_finish = clock();
-    printf("A soma total sem threads é %i \n", no_thread_acc);
-    printf("%.10f\n",((double)(no_thread_finish - no_thread_start)) / CLOCKS_PER_SEC);
-    */
+    double no_thread_time_elapsed = ((double)(no_thread_finish - no_thread_start)) / CLOCKS_PER_SEC;
+
+    printf("%.10f;%.10f;%i;%i\n", no_thread_time_elapsed, thread_time_elapsed, n_threads, n_numbers);    
     return 0;
 }
