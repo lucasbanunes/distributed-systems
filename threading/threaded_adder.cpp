@@ -38,7 +38,7 @@ typedef struct arg_data {
 int8_t *generateArray(int n_numbers ){
     int8_t* numbers= (int8_t*) malloc((n_numbers)*sizeof(int8_t));
     for (int i=0; i<n_numbers; ++i){
-        numbers[i] = rand()%101;
+        numbers[i] = (rand()%201) - 100;    //intervalo [-100, 100]
     }
     return numbers;
 }
