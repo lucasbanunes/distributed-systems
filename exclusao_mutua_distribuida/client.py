@@ -30,7 +30,7 @@ MSG_IDS = [
 ]
 
 MSG_IDX = 0
-ID_IDX = 1
+PROCESS_ID_IDX = 1
 
 class Lock(object):
 
@@ -50,12 +50,15 @@ class Lock(object):
             raise RuntimeError('Conexão não autorizada')
         elif res['response'] == 'resgistred':
             self.id = res['id']
+        else:
+            raise RuntimeError('Mensagem não esperada')
 
     def _listen(self):
         msg_str = self.s.recv(MSG_SIZE).decode().split(MSG_SEP)
+        msg_idx=int(msg_str[MSG_IDX])
         res = {
-            'response': MSG_IDS[int(msg_str[MSG_IDX])],
-            'id': MSG_IDS[int(msg_str[ID_IDX])]
+            'response': MSG_IDS[msg_idx],
+            'id': msg_str[PROCESS_ID_IDX]
         }
         return res
 
@@ -69,7 +72,7 @@ class Lock(object):
         if res['response'] == 'grant':
             return 0
         else:
-            raise RuntimeError(f'Recebida messagem invalida {res}')
+            raise RuntimeError(f'Recebida mensagem invalida {res}')
     
     def acquire(self):
         self._request()
@@ -89,7 +92,7 @@ class Lock(object):
 parser = argparse.ArgumentParser()
 parser.add_argument('r', type=int, help='Número de acessos')
 parser.add_argument('k', type=int, help='Segundos de espera')
-args = parser.parse_args()
+args = parser.parse_args().__dict__
 
 print('Inicializando')
 lock = Lock(COORD_IP, COORD_PORT)
