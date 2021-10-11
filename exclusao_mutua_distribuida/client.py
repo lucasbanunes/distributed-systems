@@ -6,7 +6,7 @@ import socket
 # Message Config
 MSG_SEP = '|'
 MSG_SIZE = 6
-INIT_MSG = '0|0|00'
+INIT_MSG = '0|0|00\n'
 # Message IDS
 REGISTER_ID = '0'
 REQUEST_ID = '1'
@@ -48,10 +48,10 @@ class Lock(object):
         res = self._listen()
         if res['response'] == 'denied':
             raise RuntimeError('Conexão não autorizada')
-        elif res['response'] == 'resgistred':
+        elif res['response'] == 'registred':
             self.id = res['id']
         else:
-            raise RuntimeError('Mensagem não esperada')
+            raise RuntimeError(f'Mensagem não esperada {res}')
 
     def _listen(self):
         msg_str = self.s.recv(MSG_SIZE).decode().split(MSG_SEP)
@@ -64,7 +64,7 @@ class Lock(object):
 
     def _request(self):
         msg = REQUEST_ID + MSG_SEP + self.id + MSG_SEP
-        msg += (MSG_SIZE - len(msg)) * '0'
+        msg += (MSG_SIZE - len(msg)) * '0' + '\n'
         self.s.send(msg.encode())
 
     def _wait_grant(self):
@@ -80,12 +80,12 @@ class Lock(object):
 
     def release(self):
         msg = RELEASE_ID + MSG_SEP + self.id + MSG_SEP
-        msg += (MSG_SIZE - len(msg)) * '0'
+        msg += (MSG_SIZE - len(msg)) * '0' + '\n'
         self.s.send(msg.encode())
     
     def unregister(self):
         msg = UNREGISTER_ID + MSG_SEP + self.id + MSG_SEP
-        msg += (MSG_SIZE - len(msg)) * '0'
+        msg += (MSG_SIZE - len(msg)) * '0' + '\n'
         self.s.send(msg.encode())
 
 
@@ -106,5 +106,5 @@ for i in range(args['r']):
     time.sleep(args['k'])
     lock.release()
     print(f'{i}. Liberado')
-
+print("Descadastrar")
 lock.unregister()

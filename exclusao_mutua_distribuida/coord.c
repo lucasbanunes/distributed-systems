@@ -16,8 +16,9 @@
 //Sockets
 #define PORT_NO 8080
 #define MAX_PROCESSES 256
+
 // MessagesIDS
-#define MSG_SIZE 6
+
 #define REGISTER_ID 0
 #define REQUEST_ID 1
 #define GRANT_ID 2
@@ -26,8 +27,8 @@
 #define QUIT_ID 5
 #define UNREGISTER_ID 6
 // MSG UTILS
-#define PADDING_MSG "000000"
-#define INIT_MSG "000000"
+#define MSG_SIZE 7
+#define PADDING_MSG "0000000"
 #define MSG_SEP "|"
 // QUEUE UTILS
 #define CLOSE_QUEUE -1337
@@ -65,18 +66,13 @@ char *build_msg(int msg_id, int process_id, char *msg){
     char aux_msg[MSG_SIZE+1]; // One more for the null pointer
     sprintf(aux_msg, "%i|%i|", msg_id, process_id);
     int pad_len = MSG_SIZE - strlen(aux_msg);
-    sprintf(msg, "%s%*.*s", aux_msg, pad_len, pad_len, PADDING_MSG);
+    sprintf(msg, "%s%*.*s\n", aux_msg, pad_len-1, pad_len-1, PADDING_MSG);
     return msg;
 }
 
 parsed_msg parse_msg(char* msg){
     parsed_msg parsed;
-    printf("Mensagem parseada: %s\n", msg);
-    if(strcmp(msg, INIT_MSG)){
-        printf("Init msg");
-        parsed.msg_id = 0;
-        parsed.process_id =-1;
-    }
+    // printf("Mensagem parseada: %s\n", msg);
     char *action_ptr = strtok(msg, MSG_SEP);
     char *id_ptr = strtok(NULL, MSG_SEP);
     parsed.msg_id = atoi(action_ptr);
@@ -86,7 +82,7 @@ parsed_msg parse_msg(char* msg){
 
 // Comunicador Functions
 int register_id(struct sockaddr_in clientaddr){
-    printf("Entered register\n");
+    // printf("Entered register\n");
     int new_id=-1;
     for (int i=0; i<MAX_PROCESSES; i++){
         if (clientsaddrs[i].sin_port  == 0){
@@ -172,13 +168,17 @@ int pop_queue(){
     return pop_id;
 }
 // Logging Functions
-int log_aquire(FILE *log_file, int process_id){
+int log_aquire(int process_id){
     // date;process_id;aquired
+    FILE *log_file = fopen(LOG_FILE, "a");
     fprintf(log_file, "%lu;%i;aquired\n", (unsigned long)time(NULL), process_id);
+    fclose(log_file);
 }
-int log_release(FILE *log_file, int process_id){
+int log_release(int process_id){
     // date;process_id;released
+    FILE *log_file = fopen(LOG_FILE, "a");
     fprintf(log_file, "%lu;%i;released\n", (unsigned long)time(NULL), process_id); 
+    fclose(log_file);
 }
 // Algorithm Functions
 int write_cr_process(int process_id){
@@ -209,7 +209,7 @@ void *algoritmo_exclusao_mutua(){
 }
 // Comunicador
 void *comunicador(){
-    FILE *log_file = fopen(LOG_FILE, "a");
+    
     struct pollfd fds[1];
     fds[0].fd = sockfd;
     fds[0].events = POLLIN;
@@ -220,14 +220,14 @@ void *comunicador(){
     struct sockaddr_in clientaddr;
     int clientlen  = sizeof(clientaddr);
     parsed_msg parsed;
-    printf("Comunicador inicializado\n");   
+    // printf("Comunicador inicializado\n");   
 
     while(__running){
         bzero((char *) &clientaddr, sizeof(clientaddr));
         current_cr_process = read_cr_process();
         if (current_cr_process != -1){
             write_cr_process(-1);
-            log_aquire(log_file, current_cr_process);
+            log_aquire(current_cr_process);
             send_grant(current_cr_process);
         }
 
@@ -239,14 +239,14 @@ void *comunicador(){
                 error("ERROR in recvfrom");
             }
             parsed = parse_msg(buffer);
-            printf("Parsed msg_id %i\n", parsed.msg_id);
+            // printf("Parsed msg_id %i\n", parsed.msg_id);
 
             switch (parsed.msg_id){
                 case REGISTER_ID :
-                    printf("Registering\n");
+                    // printf("Registering\n");
                     
                     new_id = register_id(clientaddr);
-                    printf("New_id %i\n", new_id);
+                    // printf("New_id %i\n", new_id);
                     if (new_id == -1){
                         send_deny(clientaddr);
                     }
@@ -256,13 +256,13 @@ void *comunicador(){
                     break;
 
                 case REQUEST_ID:
-                    printf("Request %i\n",parsed.process_id);
+                    // printf("Request %i\n",parsed.process_id);
                     put_queue(parsed.process_id);
                     break;
 
                 case RELEASE_ID:
-                    printf("Released\n");
-                    log_release(log_file, parsed.process_id);
+                    // printf("Released\n");
+                    log_release(parsed.process_id);
                     sem_wait(&calls_mutex);
                     n_calls[parsed.process_id] += 1;
                     sem_post(&calls_mutex);
@@ -270,12 +270,12 @@ void *comunicador(){
                     break;
 
                 case UNREGISTER_ID:
-                    printf("Unregister\n");
+                    // printf("Unregister\n");
                     unregister_process(parsed.process_id);
                     break;
 
                 default:
-                    printf("Default\n");
+                    // printf("Default\n");
                     send_deny(clientaddr);
                     break;
             }
@@ -293,7 +293,10 @@ void print_queue(){
     sem_wait(&qmutex);
     printf("[");
     for (int i=0; i<MAX_PROCESSES; i++){
-        printf(" %i,", queue[i]);
+        if (queue[i] == -1){
+            break;
+        }
+        printf("%i,", queue[i]);
     }
     printf("]\n");
     sem_post(&qmutex);
@@ -303,10 +306,10 @@ void print_queue(){
 int print_n_calls(){
     char aux;
     printf(LINE_SEP);
-    sem_wait(&calls_mutex);
     printf("[");
+    sem_wait(&calls_mutex);
     for (int i=0; i<MAX_PROCESSES; i++){
-        printf(" %i. %i, ", i, n_calls[i]);
+        printf("{ \"process_id\": %i, \"called\": %i },\n ", i, n_calls[i]);
     }
     printf("]\n");
     sem_post(&calls_mutex);
