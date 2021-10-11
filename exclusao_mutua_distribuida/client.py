@@ -71,6 +71,8 @@ class Lock(object):
         res = self._listen()
         if res['response'] == 'grant':
             return 0
+        elif res['response'] == 'quit':
+            raise SystemExit(f'Coordenador mandou finalizar {res}')
         else:
             raise RuntimeError(f'Recebida mensagem invalida {res}')
     
@@ -97,14 +99,18 @@ args = parser.parse_args().__dict__
 print('Inicializando')
 lock = Lock(COORD_IP, COORD_PORT)
 
-for i in range(args['r']):
+try:
+    for i in range(args['r']):
 
-    print(f'{i}. Aguardando')
-    lock.acquire()
-    with open('resultado.txt', 'a') as result_file:
-        result_file.write(f'{datetime.now()};{lock.id}\n')
-    time.sleep(args['k'])
-    lock.release()
-    print(f'{i}. Liberado')
-print("Descadastrar")
-lock.unregister()
+            print(f'{lock.id};{i}; Aguardando')
+            lock.acquire()
+            with open('resultado.txt', 'a') as result_file:
+                result_file.write(f'{datetime.now()};{lock.id}\n')
+            time.sleep(args['k'])
+            lock.release()
+            print(f'{lock.id};{i}; Liberado')
+except SystemExit:
+    print("O servidor mandou finalizar todos os processos")
+finally:
+    print(f"{lock.id} Descadastrado")
+    lock.unregister()

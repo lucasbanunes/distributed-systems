@@ -31,6 +31,7 @@
 #define PADDING_MSG "0000000"
 #define MSG_SEP "|"
 // QUEUE UTILS
+#define EMPTY_QUEUE -1
 #define CLOSE_QUEUE -1337
 // Files
 #define LOG_FILE "resultados.log"
@@ -43,10 +44,10 @@ typedef struct parsed_msg {
     int process_id;
 } parsed_msg;
 
-int __running = 1;
+int __running;
 int queue[MAX_PROCESSES];
 int n_calls[MAX_PROCESSES];
-int cr_process_id = -1;
+int cr_process_id;
 // Socket Variables
 int sockfd;
 struct sockaddr_in clientsaddrs[MAX_PROCESSES];
@@ -59,6 +60,7 @@ sem_t free_critical_region;
 sem_t wr_cr_process;
 sem_t cr_mutex;
 sem_t calls_mutex;
+sem_t clientsaddrs_mutex;
 
 
 // Utils Msg
@@ -84,6 +86,7 @@ parsed_msg parse_msg(char* msg){
 int register_id(struct sockaddr_in clientaddr){
     // printf("Entered register\n");
     int new_id=-1;
+    sem_wait(&clientsaddrs_mutex);
     for (int i=0; i<MAX_PROCESSES; i++){
         if (clientsaddrs[i].sin_port  == 0){
             new_id = i;
@@ -91,24 +94,26 @@ int register_id(struct sockaddr_in clientaddr){
             break;
         }
     }
+    sem_post(&clientsaddrs_mutex);
     return new_id;
 }
 
 int send_id(int process_id){
     char msg[MSG_SIZE+1];
     build_msg(REGISTER_ID, process_id, msg);
-    sendto(sockfd, (const char *)msg, strlen(msg),
-    MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id], 
-    sizeof(clientsaddrs[process_id]));
+    sem_wait(&clientsaddrs_mutex);
+    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    return 0;
 }
 
 int send_grant(int process_id){    
     char msg[MSG_SIZE+1];
     build_msg(GRANT_ID, process_id, msg);
-    sendto(sockfd, (const char *)msg, strlen(msg),
-    MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id], 
-    sizeof(clientsaddrs[process_id]));
-
+    sem_wait(&clientsaddrs_mutex);
+    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    return 0;
 }
 
 int send_deny(struct sockaddr_in clientaddr){
@@ -122,17 +127,25 @@ int send_deny(struct sockaddr_in clientaddr){
 
 int send_quit(){
     char msg[MSG_SIZE+1];
+    sem_wait(&clientsaddrs_mutex);
     for(int i=0; i<MAX_PROCESSES; i++){ 
         if (clientsaddrs[i].sin_port  != 0){ /* Not empty register */
             build_msg(QUIT_ID, i, msg);
             sendto(sockfd, (const char *)msg, strlen(msg), MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[i], sizeof(clientsaddrs[i]));
         }
     }
+    sem_post(&clientsaddrs_mutex);
+    return 0;
 }
 
 int unregister_process(int process_id){
+    sem_wait(&clientsaddrs_mutex);
     bzero((char *) &clientsaddrs[process_id], sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    sem_wait(&calls_mutex);
     n_calls[process_id] = 0;
+    sem_post(&calls_mutex);
+    return 0;
 }
 
 // Queue Functions
@@ -140,7 +153,7 @@ int put_queue(int process_id){
     sem_wait(&qempty);
     sem_wait(&qmutex);
     for(int i=0; i<MAX_PROCESSES; i++){
-        if (queue[i] == -1){
+        if (queue[i] == EMPTY_QUEUE){
             queue[i] = process_id;
             break;
         }
@@ -157,10 +170,11 @@ int pop_queue(){
     sem_wait(&qmutex);
     pop_id = queue[0];
     for(int i=0; i<MAX_PROCESSES-1; i++){
-        queue[i] = queue[i+1];
-        if (queue[i] == 0){
+        if (queue[i] == EMPTY_QUEUE){
             break;
         }
+        queue[i] = queue[i+1];
+
     }
     queue[MAX_PROCESSES-1] = -1;
     sem_post(&qmutex);
@@ -173,18 +187,21 @@ int log_aquire(int process_id){
     FILE *log_file = fopen(LOG_FILE, "a");
     fprintf(log_file, "%lu;%i;aquired\n", (unsigned long)time(NULL), process_id);
     fclose(log_file);
+    return 0;
 }
 int log_release(int process_id){
     // date;process_id;released
     FILE *log_file = fopen(LOG_FILE, "a");
     fprintf(log_file, "%lu;%i;released\n", (unsigned long)time(NULL), process_id); 
     fclose(log_file);
+    return 0;
 }
 // Algorithm Functions
 int write_cr_process(int process_id){
     sem_wait(&wr_cr_process);
     cr_process_id = process_id;
     sem_post(&wr_cr_process);
+    return 0;
 }
 
 int read_cr_process(){
@@ -225,8 +242,8 @@ void *comunicador(){
     while(__running){
         bzero((char *) &clientaddr, sizeof(clientaddr));
         current_cr_process = read_cr_process();
-        if (current_cr_process != -1){
-            write_cr_process(-1);
+        if (current_cr_process != EMPTY_QUEUE){
+            write_cr_process(EMPTY_QUEUE);
             log_aquire(current_cr_process);
             send_grant(current_cr_process);
         }
@@ -287,13 +304,13 @@ void *comunicador(){
     return 0;   
 }
 // Interface Functions
-void print_queue(){
+int print_queue(){
     char aux;
     printf(LINE_SEP);
     sem_wait(&qmutex);
     printf("[");
     for (int i=0; i<MAX_PROCESSES; i++){
-        if (queue[i] == -1){
+        if (queue[i] == EMPTY_QUEUE){
             break;
         }
         printf("%i,", queue[i]);
@@ -301,6 +318,7 @@ void print_queue(){
     printf("]\n");
     sem_post(&qmutex);
     printf(LINE_SEP);
+    return 0;
 }
 
 int print_n_calls(){
@@ -308,21 +326,28 @@ int print_n_calls(){
     printf(LINE_SEP);
     printf("[");
     sem_wait(&calls_mutex);
+    sem_wait(&clientsaddrs_mutex);
     for (int i=0; i<MAX_PROCESSES; i++){
-        printf("{ \"process_id\": %i, \"called\": %i },\n ", i, n_calls[i]);
+        if (clientsaddrs[i].sin_port != 0){
+            printf("{ \"process_id\": %i, \"called\": %i },\n ", i, n_calls[i]);
+        }
     }
     printf("]\n");
     sem_post(&calls_mutex);
+    sem_post(&clientsaddrs_mutex);
     printf(LINE_SEP);
     scanf("%c", &aux);
+    return 0;
 }
 
 int main(int argc,char **argv,char **envp){
     // Inicializing global variables
+    cr_process_id = EMPTY_QUEUE;
+    __running = 1;
     bzero((char *) &serveraddr, sizeof(serveraddr));
     for (int i=0; i<MAX_PROCESSES; i++){
         bzero((char *) &clientsaddrs[i], sizeof(clientsaddrs[i]));
-        queue[i] = -1;
+        queue[i] = EMPTY_QUEUE;
         n_calls[i] = 0;
     }
     sem_init(&qfull, 0, 0);
@@ -332,6 +357,7 @@ int main(int argc,char **argv,char **envp){
     sem_init(&wr_cr_process, 0, 1);
     sem_init(&cr_mutex, 0, 1);
     sem_init(&calls_mutex, 0, 1);
+    sem_init(&clientsaddrs_mutex, 0, 1);
 
     // Sockets
     serveraddr.sin_family = AF_INET;
@@ -379,7 +405,7 @@ int main(int argc,char **argv,char **envp){
                 printf("Encerrando\n");
                 __running = 0;
                 pthread_join(comunicador_thread_id, NULL);
-                pthread_join(exclusao_mutua_thread_id, NULL);
+                // pthread_join(exclusao_mutua_thread_id, NULL);
                 return 0;
             default:
                 printf("Opcao invalida\n");
