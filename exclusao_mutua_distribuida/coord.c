@@ -34,7 +34,7 @@
 #define EMPTY_QUEUE -1
 #define CLOSE_QUEUE -1337
 // Files
-#define LOG_FILE "resultados.log"
+#define LOG_FILE "resultado.log"
 #define RESULTS_FILE "resultado.txt"
 #define TIMEOUT 1000
 #define LINE_SEP "----------------------------------------------------------------\n"
@@ -82,72 +82,6 @@ parsed_msg parse_msg(char* msg){
     return parsed;
 }
 
-// Comunicador Functions
-int register_id(struct sockaddr_in clientaddr){
-    // printf("Entered register\n");
-    int new_id=-1;
-    sem_wait(&clientsaddrs_mutex);
-    for (int i=0; i<MAX_PROCESSES; i++){
-        if (clientsaddrs[i].sin_port  == 0){
-            new_id = i;
-            clientsaddrs[i] = clientaddr;
-            break;
-        }
-    }
-    sem_post(&clientsaddrs_mutex);
-    return new_id;
-}
-
-int send_id(int process_id){
-    char msg[MSG_SIZE+1];
-    build_msg(REGISTER_ID, process_id, msg);
-    sem_wait(&clientsaddrs_mutex);
-    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
-    sem_post(&clientsaddrs_mutex);
-    return 0;
-}
-
-int send_grant(int process_id){    
-    char msg[MSG_SIZE+1];
-    build_msg(GRANT_ID, process_id, msg);
-    sem_wait(&clientsaddrs_mutex);
-    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
-    sem_post(&clientsaddrs_mutex);
-    return 0;
-}
-
-int send_deny(struct sockaddr_in clientaddr){
-    char msg[MSG_SIZE+1];
-    build_msg(DENY_ID, -1, msg);
-    sendto(sockfd, (const char *)msg, strlen(msg),
-    MSG_CONFIRM, (const struct sockaddr *) &clientaddr, 
-    sizeof(clientaddr));
-    return 0;   
-}
-
-int send_quit(){
-    char msg[MSG_SIZE+1];
-    sem_wait(&clientsaddrs_mutex);
-    for(int i=0; i<MAX_PROCESSES; i++){ 
-        if (clientsaddrs[i].sin_port  != 0){ /* Not empty register */
-            build_msg(QUIT_ID, i, msg);
-            sendto(sockfd, (const char *)msg, strlen(msg), MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[i], sizeof(clientsaddrs[i]));
-        }
-    }
-    sem_post(&clientsaddrs_mutex);
-    return 0;
-}
-
-int unregister_process(int process_id){
-    sem_wait(&clientsaddrs_mutex);
-    bzero((char *) &clientsaddrs[process_id], sizeof(clientsaddrs[process_id]));
-    sem_post(&clientsaddrs_mutex);
-    sem_wait(&calls_mutex);
-    n_calls[process_id] = 0;
-    sem_post(&calls_mutex);
-    return 0;
-}
-
 // Queue Functions
 int put_queue(int process_id){
     sem_wait(&qempty);
@@ -182,20 +116,84 @@ int pop_queue(){
     return pop_id;
 }
 // Logging Functions
-int log_aquire(int process_id){
-    // date;process_id;aquired
+int log_msg(int process_id, int msg_id){
     FILE *log_file = fopen(LOG_FILE, "a");
-    fprintf(log_file, "%lu;%i;aquired\n", (unsigned long)time(NULL), process_id);
+    fprintf(log_file, "%lu;%i;%i\n", (unsigned long)time(NULL), process_id, msg_id);
     fclose(log_file);
     return 0;
 }
-int log_release(int process_id){
-    // date;process_id;released
-    FILE *log_file = fopen(LOG_FILE, "a");
-    fprintf(log_file, "%lu;%i;released\n", (unsigned long)time(NULL), process_id); 
-    fclose(log_file);
+
+// Comunicador Functions
+int register_id(struct sockaddr_in clientaddr){
+    // printf("Entered register\n");
+    int new_id=-1;
+    sem_wait(&clientsaddrs_mutex);
+    for (int i=0; i<MAX_PROCESSES; i++){
+        if (clientsaddrs[i].sin_port  == 0){
+            new_id = i;
+            clientsaddrs[i] = clientaddr;
+            break;
+        }
+    }
+    sem_post(&clientsaddrs_mutex);
+    return new_id;
+}
+
+int send_id(int process_id){
+    char msg[MSG_SIZE+1];
+    build_msg(REGISTER_ID, process_id, msg);
+    sem_wait(&clientsaddrs_mutex);
+    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    log_msg(process_id, REGISTER_ID);
     return 0;
 }
+
+int send_grant(int process_id){    
+    char msg[MSG_SIZE+1];
+    build_msg(GRANT_ID, process_id, msg);
+    sem_wait(&clientsaddrs_mutex);
+    sendto(sockfd, (const char *)msg, strlen(msg),MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[process_id],sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    log_msg(process_id, GRANT_ID);
+    return 0;
+}
+
+int send_deny(struct sockaddr_in clientaddr){
+    char msg[MSG_SIZE+1];
+    build_msg(DENY_ID, -1, msg);
+    sendto(sockfd, (const char *)msg, strlen(msg),
+    MSG_CONFIRM, (const struct sockaddr *) &clientaddr, 
+    sizeof(clientaddr));
+    log_msg(-1, DENY_ID);
+    return 0;   
+}
+
+int send_quit(){
+    char msg[MSG_SIZE+1];
+    sem_wait(&clientsaddrs_mutex);
+    for(int i=0; i<MAX_PROCESSES; i++){ 
+        if (clientsaddrs[i].sin_port  != 0){ /* Not empty register */
+            build_msg(QUIT_ID, i, msg);
+            sendto(sockfd, (const char *)msg, strlen(msg), MSG_CONFIRM, (const struct sockaddr *) &clientsaddrs[i], sizeof(clientsaddrs[i]));
+            log_msg(i, QUIT_ID);
+        }
+    }
+    sem_post(&clientsaddrs_mutex);
+    return 0;
+}
+
+int unregister_process(int process_id){
+    sem_wait(&clientsaddrs_mutex);
+    bzero((char *) &clientsaddrs[process_id], sizeof(clientsaddrs[process_id]));
+    sem_post(&clientsaddrs_mutex);
+    sem_wait(&calls_mutex);
+    n_calls[process_id] = 0;
+    sem_post(&calls_mutex);
+    return 0;
+}
+
+
 // Algorithm Functions
 int write_cr_process(int process_id){
     sem_wait(&wr_cr_process);
@@ -244,7 +242,6 @@ void *comunicador(){
         current_cr_process = read_cr_process();
         if (current_cr_process != EMPTY_QUEUE){
             write_cr_process(EMPTY_QUEUE);
-            log_aquire(current_cr_process);
             send_grant(current_cr_process);
         }
 
@@ -274,12 +271,13 @@ void *comunicador(){
 
                 case REQUEST_ID:
                     // printf("Request %i\n",parsed.process_id);
+                    log_msg(parsed.process_id, REQUEST_ID);
                     put_queue(parsed.process_id);
                     break;
 
                 case RELEASE_ID:
                     // printf("Released\n");
-                    log_release(parsed.process_id);
+                    log_msg(parsed.process_id, RELEASE_ID);
                     sem_wait(&calls_mutex);
                     n_calls[parsed.process_id] += 1;
                     sem_post(&calls_mutex);
@@ -288,6 +286,7 @@ void *comunicador(){
 
                 case UNREGISTER_ID:
                     // printf("Unregister\n");
+                    log_msg(parsed.process_id, UNREGISTER_ID);
                     unregister_process(parsed.process_id);
                     break;
 
